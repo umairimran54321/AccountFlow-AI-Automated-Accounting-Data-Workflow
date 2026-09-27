@@ -1,0 +1,1503 @@
+{
+  "name": "AccountFlow_AI_Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "944098cf-96ac-45df-96e4-aa7b89128a5a",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -784,
+        160
+      ],
+      "id": "c7d70db9-029a-4a3d-bc4d-61422bdf871c",
+      "name": "Webhook",
+      "webhookId": "944098cf-96ac-45df-96e4-aa7b89128a5a"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "has:attachment   subject:(\"Financial Statements\" OR \"Financial Report\" OR \"P&L\" OR \"Profit and Loss\" OR \"Balance Sheet\" OR \"Cash Flow Statement\" OR \"Accounting Report\" OR \"Trial Balance\" OR \"Management Accounts\" OR \"Monthly Accounts\" OR \"Financial Performance Report\" OR \"Revenue and Expense Report\" OR \"General Ledger Report\")"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -720,
+        -288
+      ],
+      "id": "1c260bf1-56bd-47e2-b819-531e38499aa4",
+      "name": "Gmail_Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Convert the SOURCE STRING into ONE JSON object.\n\nThe SOURCE STRING already contains the statement type.\n\nDo NOT analyze or infer the statement type.\n\nThe connected Google Sheets Chart of Accounts tool is the ONLY source of truth for account mapping.\n\n==================================================\nSOURCE FORMAT\n=============\n\nRead the SOURCE STRING in this exact order:\n\nTEST_ID | DOCUMENT_ID | COMPANY_NAME | REPORTING_PERIOD | CURRENCY | DOCUMENT_STATUS | STATEMENT_TYPE | ACCOUNT: AMOUNT | ACCOUNT: AMOUNT | ...\n\nThe value immediately after DOCUMENT_STATUS is the exact STATEMENT_TYPE.\n\nCopy it exactly.\n\nDo not change it.\nDo not infer it.\nDo not rename it.\n\n==================================================\nSTATEMENT HANDLING\n==================\n\nIf STATEMENT_TYPE = \"balance_sheet\":\n\n* balance_sheet.present = true\n* Put EVERY following ACCOUNT: AMOUNT pair into balance_sheet.line_items\n* All other statements must have present = false and empty line_items\n\nIf STATEMENT_TYPE = \"profit_and_loss\":\n\n* profit_and_loss.present = true\n* Put EVERY following ACCOUNT: AMOUNT pair into profit_and_loss.line_items\n* All other statements must have present = false and empty line_items\n\nIf STATEMENT_TYPE = \"cash_flow\":\n\n* cash_flow.present = true\n* Put EVERY following ACCOUNT: AMOUNT pair into cash_flow.line_items\n* All other statements must have present = false and empty line_items\n\nIf STATEMENT_TYPE = \"trial_balance\":\n\n* trial_balance.present = true\n* Put EVERY following ACCOUNT: AMOUNT pair into trial_balance.line_items\n* All other statements must have present = false and empty line_items\n\n==================================================\nCHART OF ACCOUNTS MAPPING\n==========================\n\nFor EVERY non-calculated account, use the connected Google Sheets Chart of Accounts tool.\n\nSearch the Chart of Accounts using the SOURCE ACCOUNT name.\n\nThe Google Sheets Chart of Accounts contains:\n\naccount_code\naccount_name\naccount_type\n\nWhen an exact account name exists in the Chart of Accounts:\n\n* Copy account_code from the Google Sheet\n* Copy account_name from the Google Sheet\n* Copy account_type from the Google Sheet\n* confidence = 1.00\n* status = \"mapped\"\n\nExample:\n\nSOURCE ACCOUNT:\nSales Revenue\n\nIf the Google Sheets tool returns:\n\naccount_code = 4000\naccount_name = Sales Revenue\naccount_type = Revenue\n\nReturn:\n\n{\n\"source_account\": \"Sales Revenue\",\n\"amount\": 125000,\n\"account_code\": \"4000\",\n\"account_name\": \"Sales Revenue\",\n\"account_type\": \"Revenue\",\n\"confidence\": 1.00,\n\"status\": \"mapped\"\n}\n\nAnother example:\n\nSOURCE ACCOUNT:\nCash\n\nIf the Google Sheets tool returns:\n\naccount_code = 1000\naccount_name = Cash\naccount_type = Asset\n\nReturn:\n\n{\n\"source_account\": \"Cash\",\n\"amount\": 62500,\n\"account_code\": \"1000\",\n\"account_name\": \"Cash\",\n\"account_type\": \"Asset\",\n\"confidence\": 1.00,\n\"status\": \"mapped\"\n}\n\n==================================================\nMANDATORY GOOGLE SHEETS LOOKUP\n==============================\n\nYou MUST check the connected Chart of Accounts Google Sheets tool for EACH non-calculated account.\n\nDo NOT rely on mappings written in this prompt.\n\nDo NOT assume an account code.\n\nDo NOT invent an account code.\n\nDo NOT invent an account name.\n\nDo NOT invent an account type.\n\nThe Google Sheets Chart of Accounts is the authoritative mapping source.\n\nIf an account exists in the Google Sheet, use the exact values returned by the Google Sheet.\n\n==================================================\nACCOUNT NOT FOUND\n=================\n\nIf a non-calculated SOURCE ACCOUNT cannot be found in the Google Sheets Chart of Accounts:\n\nKeep the account in the same statement.\n\nDo NOT remove it.\n\nDo NOT invent a mapping.\n\nReturn:\n\n\"account_code\": \"\",\n\"account_name\": \"\",\n\"account_type\": \"\",\n\"confidence\": 0,\n\"status\": \"review\"\n\nAdd a review reason explaining that the account was not found in the Chart of Accounts.\n\nExample:\n\n{\n\"source_account\": \"Unknown Account\",\n\"amount\": 5000,\n\"account_code\": \"\",\n\"account_name\": \"\",\n\"account_type\": \"\",\n\"confidence\": 0,\n\"status\": \"review\"\n}\n\n==================================================\nCALCULATED ROWS\n================\n\nThe following are calculated/summary rows:\n\nGross Profit\nTotal Operating Expenses\nOperating Income\nIncome Before Tax\nNet Income\nTotal Assets\nTotal Liabilities\nTotal Equity\nTotal Liabilities & Equity\nNet Cash from Operating Activities\nNet Cash from Investing Activities\nNet Cash from Financing Activities\nNet Increase in Cash\nCash at Beginning of Period\nCash at End of Period\nTrial Balance TOTAL\n\nFor these rows:\n\n\"account_code\": \"\"\n\"account_name\": \"\"\n\"account_type\": \"calculated\"\n\"confidence\": 1.00\n\"status\": \"calculated\"\n\nDo NOT search the Chart of Accounts for calculated rows.\n\nDo NOT calculate their amounts.\n\nCopy their amounts exactly from the SOURCE STRING.\n\n==================================================\nAMOUNTS\n=======\n\nCopy every amount exactly from the SOURCE STRING.\n\nDo NOT calculate.\n\nDo NOT modify.\n\nDo NOT round.\n\nDo NOT convert.\n\nDo NOT recalculate totals.\n\nFor example:\n\nSOURCE:\nSales Revenue: 125000\n\nOutput:\n\n\"amount\": 125000\n\n==================================================\nROW PRESERVATION\n===============\n\nEvery ACCOUNT: AMOUNT pair in the SOURCE STRING must appear exactly once in the appropriate statement's line_items.\n\nDo not:\n\n* remove rows\n* duplicate rows\n* merge rows\n* split rows\n* rename source accounts\n* move rows between statements\n* add accounts that are not in the SOURCE STRING\n\nThe number of line_items must match the number of ACCOUNT: AMOUNT pairs in the SOURCE STRING.\n\n==================================================\nRECONCILIATION\n==============\n\nDo NOT calculate reconciliation.\n\nDo NOT determine whether the statement reconciles.\n\nAlways return:\n\n\"reconciled\": false\n\nThe downstream Code node will perform all deterministic reconciliation and validation.\n\n==================================================\nREVIEW\n======\n\nSet:\n\n\"review_required\": true\n\nif one or more non-calculated accounts could not be found in the Chart of Accounts.\n\nSet:\n\n\"review_required\": false\n\nwhen every non-calculated account was successfully mapped.\n\nFor review_reasons, list the unmapped account names.\n\nExample:\n\n\"review_required\": true,\n\"review_reasons\": [\n  \"Account not found in Chart of Accounts: Other Expenses\"\n]\n\nIf all accounts are successfully mapped:\n\n\"review_required\": false,\n\"review_reasons\": []\n\n==================================================\nIMPORTANT RULES\n===============\n\n1. Return ONE JSON object only.\n2. Do not return markdown.\n3. Do not return explanations.\n4. Do not return multiple objects.\n5. Do not change any amount.\n6. Do not calculate any amount.\n7. Do not add any account.\n8. Do not remove any account.\n9. Do not move an account to another statement.\n10. Do not infer the statement type.\n11. Copy statement_type directly from the SOURCE STRING.\n12. The SOURCE STRING is the complete input.\n13. The source uses \"|\" to separate values.\n14. The source uses \":\" to separate account names and amounts.\n15. test_id must be copied exactly.\n16. document_id must be copied exactly.\n17. company_name must be copied exactly.\n18. reporting_period must be copied exactly.\n19. currency must be copied exactly.\n20. document_status must be copied exactly.\n21. Use the Google Sheets Chart of Accounts tool for every non-calculated account.\n22. Never invent mappings.\n23. Never use a hardcoded mapping when the Google Sheets tool can provide the mapping.\n24. Keep every source row exactly once.\n25. Calculated rows must not be sent to the Chart of Accounts tool.\n26. Reconciliation is handled downstream by Code.\n27. Return all values according to the required JSON structure.\n\n==================================================\nREQUIRED OUTPUT\n===============\n\n{\n  \"test_id\": \"\",\n  \"document_id\": \"\",\n  \"company_name\": \"\",\n  \"reporting_period\": \"\",\n  \"currency\": \"\",\n  \"document_status\": \"\",\n  \"statements\": {\n    \"profit_and_loss\": {\n      \"present\": false,\n      \"line_items\": [],\n      \"reconciled\": false\n    },\n    \"balance_sheet\": {\n      \"present\": false,\n      \"line_items\": [],\n      \"reconciled\": false\n    },\n    \"cash_flow\": {\n      \"present\": false,\n      \"line_items\": [],\n      \"reconciled\": false\n    },\n    \"trial_balance\": {\n      \"present\": false,\n      \"line_items\": [],\n      \"reconciled\": false\n    },\n    \"other_financial\": {\n      \"present\": false,\n      \"line_items\": [],\n      \"reconciled\": false\n    }\n  },\n  \"review_required\": false,\n  \"review_reasons\": []\n}\n\nEach line item MUST be:\n\n{\n  \"source_account\": \"\",\n  \"amount\": 0,\n  \"account_code\": \"\",\n  \"account_name\": \"\",\n  \"account_type\": \"\",\n  \"confidence\": 0,\n  \"status\": \"\"\n}\n\n==================================================\nSOURCE STRING\n=============\n\n{{ $json.document }}\n\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        400,
+        -80
+      ],
+      "id": "572eb1dc-421d-470e-8338-e2b592eed0b3",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        320,
+        144
+      ],
+      "id": "6e499d4e-d090-45bd-ba93-e6f5b32151de",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "16zRiRBAEZsldBX-c9tvK8FuvQFMjuoWA7K3vXq9hjLc",
+          "mode": "list",
+          "cachedResultName": "Chart_of_Accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16zRiRBAEZsldBX-c9tvK8FuvQFMjuoWA7K3vXq9hjLc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16zRiRBAEZsldBX-c9tvK8FuvQFMjuoWA7K3vXq9hjLc/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        512,
+        128
+      ],
+      "id": "3195f5a5-0922-48f6-9d67-40e90cc25d3a",
+      "name": "Get row(s) in sheet in Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "t0wSSLqSIdIhYaJZ",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1jikSkSs_t7zYkrVvpJf_ItvC-4Iiq8dW1WkYpA6A4Ws",
+          "mode": "list",
+          "cachedResultName": "Mapped_Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jikSkSs_t7zYkrVvpJf_ItvC-4Iiq8dW1WkYpA6A4Ws/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1jikSkSs_t7zYkrVvpJf_ItvC-4Iiq8dW1WkYpA6A4Ws/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        128
+      ],
+      "id": "a3e889d6-ab92-44d3-bbd7-afe559edca14",
+      "name": "Get row(s) in sheet in Google Sheets1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "t0wSSLqSIdIhYaJZ",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.statement_type }}",
+                    "rightValue": "profit_and_loss",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "aad4aae0-393c-4346-985f-f117de1e8c51"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "profit_and_loss"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0afdcdab-a809-4932-b680-7510ec5ef550",
+                    "leftValue": "={{ $json.statement_type }}",
+                    "rightValue": "balance_sheet",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "balance_sheet"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cca9ac1f-1fd5-4f3f-a91a-68af12bd6edb",
+                    "leftValue": "={{ $json.statement_type }}",
+                    "rightValue": "cash_flow",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Cash_Flow_Statement"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "6d4c87e9-58fb-4403-b01a-35496c9c5ff9",
+                    "leftValue": "={{ $json.statement_type }}",
+                    "rightValue": "trial_balance",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Trial_Balance "
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8b1576b7-1ef6-44f7-b812-af38f3c30374",
+                    "leftValue": "={{ $json.statement_type }}",
+                    "rightValue": "other_financial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Other_financial"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        -80
+      ],
+      "id": "56ee698d-a32b-473f-a075-d0af86ea0f11",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "={{ $('Gmail_Trigger').item.binary[Object.keys($('Gmail_Trigger').item.binary)[0]] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        -240
+      ],
+      "id": "cbd1360d-2096-4e09-afba-28f4c96725f3",
+      "name": "ExtractFromExcel"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "={{ $('Gmail_Trigger').item.binary[Object.keys($('Gmail_Trigger').item.binary)[0]] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        32,
+        128
+      ],
+      "id": "f37bd2b5-5e71-446a-8eab-1e06261d8755",
+      "name": "ExtractFromPDF"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst fieldName =\n  \"USD | Accrual Basis | Management Accounts – Unaudited\";\n\n// Check if the input contains PDF/text content\nconst textInput = $input.first().json?.text;\n\nlet message;\n\nif (textInput !== undefined && textInput !== null && textInput !== \"\") {\n  // PDF/text input\n  message = String(textInput);\n} else {\n  // Google Sheets / multiple items input\n  const values = items\n    .map(item => item.json?.[fieldName])\n    .filter(\n      value =>\n        value !== undefined &&\n        value !== null &&\n        value !== \"\"\n    );\n\n  message = values\n    .map(value => String(value))\n    .join(\"\\n\");\n}\n\n// Return ONE n8n item\nreturn [\n  {\n    json: {\n      document: message\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -64
+      ],
+      "id": "67223712-1e0b-442e-bdac-ae33f380faf2",
+      "name": "Simplify_Input"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.input_type }}",
+                    "rightValue": "Excel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c80c597c-c0b4-45f5-a968-48bef4390cf3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Excel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b6b5dda4-e89c-4395-90d9-5b44b4d89335",
+                    "leftValue": "={{ $json.input_type }}",
+                    "rightValue": "API",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "API"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "26daa6c5-8e7f-4bf6-89d2-260ab4716e3d",
+                    "leftValue": "={{ $json.input_type }}",
+                    "rightValue": "PDF",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PDF"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -320,
+        -80
+      ],
+      "id": "10ca1ee5-58ed-4763-b563-4d3ca1306442",
+      "name": "RouteForPdf_Excel-API"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\n\nconst binary = input.binary || {};\nconst json = input.json || {};\n\nlet inputType = \"API\";\nlet message = \"\";\n\n// --------------------------------------------------\n// CHECK FOR FILE ATTACHMENT\n// --------------------------------------------------\n\nconst binaryKeys = Object.keys(binary);\n\nif (binaryKeys.length > 0) {\n\n  const file = binary[binaryKeys[0]];\n\n  const fileName = String(\n    file.fileName || \"\"\n  ).toLowerCase();\n\n  const mimeType = String(\n    file.mimeType || \"\"\n  ).toLowerCase();\n\n  // PDF\n  if (\n    fileName.endsWith(\".pdf\") ||\n    mimeType === \"application/pdf\"\n  ) {\n    inputType = \"PDF\";\n  }\n\n  // Excel\n  else if (\n    fileName.endsWith(\".xlsx\") ||\n    fileName.endsWith(\".xls\") ||\n    mimeType === \"application/vnd.ms-excel\" ||\n    mimeType ===\n      \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"\n  ) {\n    inputType = \"Excel\";\n  }\n}\n\n\n// --------------------------------------------------\n// GET API MESSAGE\n// --------------------------------------------------\n\nif (inputType === \"API\") {\n\n  // body.Message\n  if (json.body?.Message !== undefined) {\n    message = String(json.body.Message);\n  }\n\n  // Message\n  else if (json.Message !== undefined) {\n    message = String(json.Message);\n  }\n\n  // body.message\n  else if (json.body?.message !== undefined) {\n    message = String(json.body.message);\n  }\n\n  // message\n  else if (json.message !== undefined) {\n    message = String(json.message);\n  }\n}\n\n\n// --------------------------------------------------\n// RETURN JSON + ORIGINAL BINARY\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      input_type: String(inputType),\n      message: String(message)\n    },\n\n    binary: binary\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        -64
+      ],
+      "id": "6cae157d-14c5-4b85-9da0-ceeb6dfad0e1",
+      "name": "DecidesData_PDF_API_EXCEL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Get AI output\nlet data = input.output;\n\n// Parse JSON string\nif (typeof data === \"string\") {\n  data = JSON.parse(data);\n}\n\n// Find the statement where present = true\nconst statementEntry = Object.entries(data.statements || {})\n  .find(([key, value]) => value?.present === true);\n\nconst statementType = statementEntry?.[0] || \"\";\nconst statement = statementEntry?.[1] || {};\n\nconst lineItems = Array.isArray(statement.line_items)\n  ? statement.line_items\n  : [];\n\n// Create ONE output object\nconst output = {\n  test_id: String(data.test_id ?? \"\"),\n  document_id: String(data.document_id ?? \"\"),\n  company_name: String(data.company_name ?? \"\"),\n  reporting_period: String(data.reporting_period ?? \"\"),\n  currency: String(data.currency ?? \"\"),\n  document_status: String(data.document_status ?? \"\"),\n  statement_type: String(statementType),\n  statement_reconciled: String(statement.reconciled ?? \"\"),\n  review_required: String(data.review_required ?? \"\"),\n  review_reasons: Array.isArray(data.review_reasons)\n    ? data.review_reasons.join(\" | \")\n    : String(data.review_reasons ?? \"\")\n};\n\n// Add EVERY line item as separate string fields\nlineItems.forEach((item, index) => {\n\n  const n = index + 1;\n\n  output[`row_${n}_source_account`] =\n    String(item.source_account ?? \"\");\n\n  output[`row_${n}_amount`] =\n    String(item.amount ?? \"\");\n\n  output[`row_${n}_account_code`] =\n    String(item.account_code ?? \"\");\n\n  output[`row_${n}_account_name`] =\n    String(item.account_name ?? \"\");\n\n  output[`row_${n}_account_type`] =\n    String(item.account_type ?? \"\");\n\n  output[`row_${n}_confidence`] =\n    String(item.confidence ?? \"\");\n\n  output[`row_${n}_status`] =\n    String(item.status ?? \"\");\n});\n\n// Return ONE n8n item\nreturn [\n  {\n    json: output\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        -80
+      ],
+      "id": "b4720735-db82-4f49-976b-4c0d529966cd",
+      "name": "Simplify_Output"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5a8cba54-6f9d-4a6b-95b9-11d4b8ec1203",
+              "leftValue": "={{ Number($json.row_1_confidence) }}",
+              "rightValue": 0.95,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "93056777-011e-4a3b-8ba1-a7d113dae5fe",
+              "leftValue": "={{ $json.review_required }}",
+              "rightValue": "false",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1536,
+        -352
+      ],
+      "id": "2cbd1285-553a-4387-9b8d-9c498cefea5d",
+      "name": "CheckIfScore>0.95"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5a8cba54-6f9d-4a6b-95b9-11d4b8ec1203",
+              "leftValue": "={{ Number($json.row_1_confidence) }}",
+              "rightValue": 0.95,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1552,
+        -176
+      ],
+      "id": "f34674c0-c450-49a6-b876-95be8a22fe14",
+      "name": "CheckIfScore>0.951"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5a8cba54-6f9d-4a6b-95b9-11d4b8ec1203",
+              "leftValue": "={{ Number($json.row_1_confidence) }}",
+              "rightValue": 0.95,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1552,
+        -16
+      ],
+      "id": "3f2afaf7-077e-439b-90c8-479987d0526c",
+      "name": "CheckIfScore>0.952"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5a8cba54-6f9d-4a6b-95b9-11d4b8ec1203",
+              "leftValue": "={{ Number($json.row_1_confidence) }}",
+              "rightValue": 0.95,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1536,
+        160
+      ],
+      "id": "8067c6ed-d032-47ee-b33e-1b8524c21639",
+      "name": "CheckIfScore>0.953"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5a8cba54-6f9d-4a6b-95b9-11d4b8ec1203",
+              "leftValue": "={{ Number($json.row_1_confidence) }}",
+              "rightValue": 0.95,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1568,
+        304
+      ],
+      "id": "92fcfd97-c57d-479d-be0c-d88d2413e63b",
+      "name": "CheckIfScore>0.954"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// --------------------------------------------------\n// 1. GET ORIGINAL DATA FROM DECISION NODE\n// --------------------------------------------------\n\nconst previousNode = $('DecidesData_PDF_API_EXCEL').first().json;\n\nconst originalMessage = String(\n  previousNode.message ?? \"\"\n);\n\nconst inputType = String(\n  previousNode.input_type ?? \"\"\n).toUpperCase();\n\n\n// --------------------------------------------------\n// 2. DETERMINE SOURCE\n// --------------------------------------------------\n\nlet source = \"\";\n\nif (inputType === \"API\") {\n  source = \"Webhook\";\n}\nelse if (\n  inputType === \"PDF\" ||\n  inputType === \"EXCEL\"\n) {\n  source = \"Email\";\n}\nelse {\n  source = \"Unknown\";\n}\n\n\n// --------------------------------------------------\n// 3. GENERATE RANDOM RUN ID\n// --------------------------------------------------\n\nconst runId =\n  \"RUN-\" +\n  Date.now().toString(36).toUpperCase() +\n  \"-\" +\n  Math.random().toString(36).substring(2, 8).toUpperCase();\n\n\n// --------------------------------------------------\n// 4. FIND ALL ROWS\n// --------------------------------------------------\n\nconst rowNumbers = Object.keys(input)\n  .filter(key => /^row_\\d+_source_account$/.test(key))\n  .map(key => {\n    const match = key.match(/^row_(\\d+)_source_account$/);\n    return Number(match[1]);\n  })\n  .sort((a, b) => a - b);\n\n\n// --------------------------------------------------\n// 5. COUNT ROWS\n// --------------------------------------------------\n\nconst totalRows = rowNumbers.length;\n\n\n// --------------------------------------------------\n// 6. COUNT EXTRACTED + MAPPED ROWS\n// --------------------------------------------------\n\nlet extractedRows = 0;\nlet mappedRows = 0;\n\nfor (const rowNumber of rowNumbers) {\n\n  const sourceAccount = String(\n    input[`row_${rowNumber}_source_account`] ?? \"\"\n  ).trim();\n\n  const status = String(\n    input[`row_${rowNumber}_status`] ?? \"\"\n  ).trim().toLowerCase();\n\n  // Row counts as extracted if source account exists\n  if (sourceAccount !== \"\") {\n    extractedRows++;\n  }\n\n  // Row counts as mapped if status = mapped\n  if (status === \"mapped\") {\n    mappedRows++;\n  }\n}\n\n\n// --------------------------------------------------\n// 7. CREATE EXTRACTED ROWS STRING\n// --------------------------------------------------\n\nconst extractedRowsString = rowNumbers\n  .map(rowNumber => {\n\n    const sourceAccount = String(\n      input[`row_${rowNumber}_source_account`] ?? \"\"\n    );\n\n    const amount = String(\n      input[`row_${rowNumber}_amount`] ?? \"\"\n    );\n\n    return `Row ${rowNumber}: ${sourceAccount} = ${amount}`;\n\n  })\n  .filter(row => !row.endsWith(\" = \"))\n  .join(\" | \");\n\n\n// --------------------------------------------------\n// 8. CREATE MAPPED ROWS STRING\n// --------------------------------------------------\n\nconst mappedRowsString = rowNumbers\n  .map(rowNumber => {\n\n    const sourceAccount = String(\n      input[`row_${rowNumber}_source_account`] ?? \"\"\n    );\n\n    const accountCode = String(\n      input[`row_${rowNumber}_account_code`] ?? \"\"\n    );\n\n    const accountName = String(\n      input[`row_${rowNumber}_account_name`] ?? \"\"\n    );\n\n    const accountType = String(\n      input[`row_${rowNumber}_account_type`] ?? \"\"\n    );\n\n    const status = String(\n      input[`row_${rowNumber}_status`] ?? \"\"\n    ).toLowerCase();\n\n    if (status !== \"mapped\") {\n      return \"\";\n    }\n\n    return `Row ${rowNumber}: ${sourceAccount} -> ${accountCode} | ${accountName} | ${accountType}`;\n\n  })\n  .filter(row => row !== \"\")\n  .join(\" | \");\n\n\n// --------------------------------------------------\n// 9. RETURN ONE ITEM\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      // Existing data\n      ...input,\n\n      // Original source data\n      original_message: String(originalMessage),\n\n      // Test run information\n      run_id: String(runId),\n      input_type: String(inputType),\n      source: String(source),\n\n      // Row statistics\n      total_rows: String(totalRows),\n      extracted_rows: String(extractedRows),\n      mapped_rows: String(mappedRows),\n\n      // Row strings\n      extracted_rows_string: String(extractedRowsString),\n      mapped_rows_string: String(mappedRowsString)\n\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        -16
+      ],
+      "id": "b0f3df18-cdef-4396-887b-e9a8f5f44a15",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "sendTo": "ranahamza75311@gmail.com",
+        "subject": "= AI Agent Checked {{ $json.statement_type }}",
+        "emailType": "text",
+        "message": "=Dear Manager,\n\nAI Agent is submitting the {{ $json.statement_type }} from {{ $json.company_name }} with document id {{ $json.document_id }} as the result is {{ $json.row_1_status }} received as {{ $('DecidesData_PDF_API_EXCEL').item.json.input_type }} ",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": []
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        -16
+      ],
+      "id": "34f00d70-bfdf-49ef-9adf-5b43caf4f8e2",
+      "name": "Send a message",
+      "webhookId": "78db11be-4259-4798-b17c-9e4251074104",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1FAom0ku8zrDdKbZ_vZCDI0u05axj5Vytz060CTQ4r8o",
+          "mode": "list",
+          "cachedResultName": "Processing_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1FAom0ku8zrDdKbZ_vZCDI0u05axj5Vytz060CTQ4r8o/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1FAom0ku8zrDdKbZ_vZCDI0u05axj5Vytz060CTQ4r8o/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "document": "={{ $('DecidesData_PDF_API_EXCEL').item.json.input_type }}",
+            "run_id": "={{ $('Code in JavaScript').item.json.run_id }}",
+            "source": "={{ $('Code in JavaScript').item.json.source }}",
+            "extracted": "={{ $('Code in JavaScript').item.json.extracted_rows }}",
+            "mapped": "={{ $('Code in JavaScript').item.json.mapped_rows }}",
+            "status": "={{ $('Code in JavaScript').item.json.row_1_status }}"
+          },
+          "matchingColumns": [
+            "run_id"
+          ],
+          "schema": [
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "document",
+              "displayName": "document",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "extracted",
+              "displayName": "extracted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mapped",
+              "displayName": "mapped",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_items",
+              "displayName": "review_items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2464,
+        -16
+      ],
+      "id": "441e2680-6526-4ebd-9e2d-54e2f0fd6ac0",
+      "name": "Saves_Data_To_ProsessingLog",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "t0wSSLqSIdIhYaJZ",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1FChu8UTOjs2lIoqzR2ScXW1F1ODcjxWGVCihBSe8gnc",
+          "mode": "list",
+          "cachedResultName": "Extracted_Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1FChu8UTOjs2lIoqzR2ScXW1F1ODcjxWGVCihBSe8gnc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1FChu8UTOjs2lIoqzR2ScXW1F1ODcjxWGVCihBSe8gnc/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "document_id": "={{ $('Code in JavaScript').item.json.document_id }}",
+            "statement": "={{ $('Code in JavaScript').item.json.statement_type }}",
+            "source_account": "={{ $('Code in JavaScript').item.json.row_15_source_account }}",
+            "amount": "={{ $('Code in JavaScript').item.json.row_15_amount }}",
+            "currency": "={{ $('Code in JavaScript').item.json.currency }}",
+            "period": "={{ $('Code in JavaScript').item.json.reporting_period }}"
+          },
+          "matchingColumns": [
+            "document_id"
+          ],
+          "schema": [
+            {
+              "id": "document_id",
+              "displayName": "document_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "statement",
+              "displayName": "statement",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_account",
+              "displayName": "source_account",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "period",
+              "displayName": "period",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2768,
+        -16
+      ],
+      "id": "30be329f-17eb-4f9d-9037-0d06d619dfa0",
+      "name": "Saves_Data_To_ExtractedData",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "t0wSSLqSIdIhYaJZ",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ranahamza75311@gmail.com",
+        "subject": "Request for Review ",
+        "emailType": "text",
+        "message": "=Dear Team,\n\nPlease review the financial statement of {{ $('Switch').item.json.company_name }}  Documtment id {{ $('Switch').item.json.document_id }} type {{ $('Switch').item.json.statement_type }} has  unmapped listings please check in attachmetn ",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ Object.keys($('DecidesData_PDF_API_EXCEL').first().binary)[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        -528
+      ],
+      "id": "39dd4f70-8936-49d9-a104-a734ac237d9f",
+      "name": "Send a message1",
+      "webhookId": "cf50e627-d11e-43d7-b3dc-0afac4209fab",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('DecidesData_PDF_API_EXCEL').first();\n\nreturn [{\n  json: {},\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        -512
+      ],
+      "id": "5c457cae-15e1-4516-9876-344092d6456e",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('DecidesData_PDF_API_EXCEL').first();\n\nreturn [{\n  json: {},\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        -320
+      ],
+      "id": "a0fe881e-8ecf-419f-bb79-46d869a3cb16",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "sendTo": "ranahamza75311@gmail.com",
+        "subject": "Request for Review ",
+        "emailType": "text",
+        "message": "=Dear Team,  Please review the financial statement of {{ $('Switch').item.json.company_name }}  Documtment id {{ $('Switch').item.json.document_id }} type {{ $('Switch').item.json.statement_type }} has  unmapped listings please check in attachmetn ",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ Object.keys($('DecidesData_PDF_API_EXCEL').first().binary)[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2144,
+        -336
+      ],
+      "id": "3f3f2d42-e6c7-4f53-9aea-f9abc7b88a7d",
+      "name": "Send a message2",
+      "webhookId": "8ab96d72-4409-40ee-b7fb-f440ec19e895",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('DecidesData_PDF_API_EXCEL').first();\n\nreturn [{\n  json: {},\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        -160
+      ],
+      "id": "ab4abeee-d54c-4e58-9928-4d454d97abca",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "sendTo": "ranahamza75311@gmail.com",
+        "subject": "Request for Review ",
+        "emailType": "text",
+        "message": "=Dear Team,  Please review the financial statement of {{ $('Switch').item.json.company_name }}  Documtment id {{ $('Switch').item.json.document_id }} type {{ $('Switch').item.json.statement_type }} has  unmapped listings please check in attachmetn ",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ Object.keys($('DecidesData_PDF_API_EXCEL').first().binary)[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2144,
+        -176
+      ],
+      "id": "397682b0-6fa3-41fb-baa1-c94b32ca8978",
+      "name": "Send a message3",
+      "webhookId": "8ab96d72-4409-40ee-b7fb-f440ec19e895",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ranahamza75311@gmail.com",
+        "subject": "Request for Review ",
+        "emailType": "text",
+        "message": "=Dear Team,  Please review the financial statement of {{ $('Switch').item.json.company_name }}  Documtment id {{ $('Switch').item.json.document_id }} type {{ $('Switch').item.json.statement_type }} has  unmapped listings please check in attachmetn ",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ Object.keys($('DecidesData_PDF_API_EXCEL').first().binary)[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2192,
+        240
+      ],
+      "id": "fda3a510-c1f2-4256-ab3d-b50b08735b3a",
+      "name": "Send a message4",
+      "webhookId": "8ab96d72-4409-40ee-b7fb-f440ec19e895",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('DecidesData_PDF_API_EXCEL').first();\n\nreturn [{\n  json: {},\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        208
+      ],
+      "id": "433bb6a9-91f2-4831-b755-08d6456634c7",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('DecidesData_PDF_API_EXCEL').first();\n\nreturn [{\n  json: {},\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        368
+      ],
+      "id": "cc9c2584-6125-4f71-b8c0-c32c9ae90675",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "sendTo": "ranahamza75311@gmail.com",
+        "subject": "Request for Review ",
+        "emailType": "text",
+        "message": "=Dear Team,  Please review the financial statement of {{ $('Switch').item.json.company_name }}  Documtment id {{ $('Switch').item.json.document_id }} type {{ $('Switch').item.json.statement_type }} has  unmapped listings please check in attachmetn ",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ Object.keys($('DecidesData_PDF_API_EXCEL').first().binary)[0] }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2176,
+        432
+      ],
+      "id": "b3f1b5ef-e1b1-4d9b-8aeb-31e040856ba7",
+      "name": "Send a message5",
+      "webhookId": "8ab96d72-4409-40ee-b7fb-f440ec19e895",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Yg9x1qUCq9Hqa3mW",
+          "name": "Gmail account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail_Trigger": {
+      "main": [
+        [
+          {
+            "node": "DecidesData_PDF_API_EXCEL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "DecidesData_PDF_API_EXCEL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet in Google Sheets": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet in Google Sheets1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Simplify_Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "CheckIfScore>0.95",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CheckIfScore>0.951",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CheckIfScore>0.952",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CheckIfScore>0.953",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CheckIfScore>0.954",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractFromExcel": {
+      "main": [
+        [
+          {
+            "node": "Simplify_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractFromPDF": {
+      "main": [
+        [
+          {
+            "node": "Simplify_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simplify_Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RouteForPdf_Excel-API": {
+      "main": [
+        [
+          {
+            "node": "ExtractFromExcel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simplify_Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ExtractFromPDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DecidesData_PDF_API_EXCEL": {
+      "main": [
+        [
+          {
+            "node": "RouteForPdf_Excel-API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simplify_Output": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckIfScore>0.951": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Saves_Data_To_ProsessingLog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saves_Data_To_ProsessingLog": {
+      "main": [
+        [
+          {
+            "node": "Saves_Data_To_ExtractedData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saves_Data_To_ExtractedData": {
+      "main": [
+        []
+      ]
+    },
+    "CheckIfScore>0.95": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckIfScore>0.952": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckIfScore>0.953": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CheckIfScore>0.954": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Send a message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Send a message4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Send a message5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0e1104fc-b1ab-4a6d-b48c-a01004f80734",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "46f4e8dba6cf8009f0c1674993f7760e8599064d0685853c2415ef43799feeab"
+  },
+  "nodeGroups": [],
+  "id": "el9whiSe3U5Lkvof",
+  "tags": []
+}
